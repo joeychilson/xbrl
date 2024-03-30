@@ -3,6 +3,7 @@ package xbrl
 import (
 	"encoding/xml"
 	"fmt"
+	"strconv"
 	"strings"
 
 	strip "github.com/grokify/html-strip-tags-go"
@@ -17,7 +18,7 @@ type XBRL struct {
 type Fact struct {
 	Context  *Context `json:"context"`
 	Concept  string   `json:"concept"`
-	Value    string   `json:"value"`
+	Value    any      `json:"value"`
 	Decimals string   `json:"decimals,omitempty"`
 	Unit     string   `json:"unit,omitempty"`
 }
@@ -99,11 +100,8 @@ func Parse(xbrl string) (*XBRL, error) {
 		segments := make([]Segment, 0)
 		for _, seg := range ctx.Segments {
 			for _, member := range seg.Members {
-				dimensionParts := strings.Split(member.Dimension, ":")
-				dimension := dimensionParts[len(dimensionParts)-1]
-
-				memberParts := strings.Split(member.Value, ":")
-				memberValue := memberParts[len(memberParts)-1]
+				dimension := getLastPart(member.Dimension, ':')
+				memberValue := getLastPart(member.Value, ':')
 
 				segments = append(segments, Segment{
 					Dimension: dimension,
@@ -133,27 +131,38 @@ func Parse(xbrl string) (*XBRL, error) {
 		facts = append(facts, Fact{
 			Context:  context,
 			Concept:  fact.XMLName.Local,
-			Value:    cleanValue(fact.Value),
+			Value:    parseValue(fact.Value),
 			Decimals: fact.Decimals,
-			Unit:     cleanUnit(unit),
+			Unit:     getLastPart(unit, ':'),
 		})
 	}
 
 	return &XBRL{Facts: facts}, nil
 }
 
-func cleanValue(value string) string {
-	stripHTML := strip.StripTags(value)
-	stripSpaces := strings.ReplaceAll(stripHTML, "\n", "")
-	words := strings.Fields(stripSpaces)
-	cleanedValue := strings.Join(words, " ")
-	return cleanedValue
+func parseValue(value string) any {
+	if boolValue, err := strconv.ParseBool(value); err == nil {
+		return boolValue
+	}
+	if intValue, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return intValue
+	}
+	if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
+		return floatValue
+	}
+	return cleanTextValue(value)
 }
 
-func cleanUnit(unit string) string {
-	unitParts := strings.Split(unit, ":")
-	if len(unitParts) == 1 {
-		return unitParts[0]
+func cleanTextValue(value string) string {
+	stripHTML := strip.StripTags(strings.ReplaceAll(value, "\n", ""))
+	words := strings.Fields(stripHTML)
+	return strings.Join(words, " ")
+}
+
+func getLastPart(s string, sep rune) string {
+	pos := strings.LastIndexByte(s, byte(sep))
+	if pos == -1 {
+		return s
 	}
-	return unitParts[len(unitParts)-1]
+	return s[pos+1:]
 }
