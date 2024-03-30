@@ -87,11 +87,12 @@ func (x *XBRL) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 		if !ok {
 			continue
 		}
-		unit := units[fact.UnitRef]
 
 		var value any
-		if unit == "" {
-			value = extractText(fact.Value)
+
+		unit, ok := units[fact.UnitRef]
+		if !ok {
+			value = parseText(fact.Value)
 		} else {
 			value = parseValue(fact.Value)
 		}
@@ -145,6 +146,14 @@ type rawXBRL struct {
 	} `xml:",any"`
 }
 
+// parseText removes HTML tags and newlines from the given value and returns just the text.
+func parseText(value string) string {
+	stripHTML := strip.StripTags(strings.ReplaceAll(value, "\n", ""))
+	words := strings.Fields(stripHTML)
+	return strings.Join(words, " ")
+}
+
+// parseValue converts the given value to a boolean, integer, float, or returns the original value.
 func parseValue(value string) any {
 	if boolValue, err := strconv.ParseBool(value); err == nil {
 		return boolValue
@@ -158,12 +167,7 @@ func parseValue(value string) any {
 	return value
 }
 
-func extractText(value string) string {
-	stripHTML := strip.StripTags(strings.ReplaceAll(value, "\n", ""))
-	words := strings.Fields(stripHTML)
-	return strings.Join(words, " ")
-}
-
+// getLastPart returns the last part of the string after the given separator.
 func getLastPart(s string, sep rune) string {
 	pos := strings.LastIndexByte(s, byte(sep))
 	if pos == -1 {
