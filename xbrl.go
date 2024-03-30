@@ -16,18 +16,18 @@ type XBRL struct {
 
 // Fact represents a single fact in the XBRL data.
 type Fact struct {
-	Context  *Context `json:"context"`
-	Concept  string   `json:"concept"`
-	Value    any      `json:"value"`
-	Decimals string   `json:"decimals,omitempty"`
-	Unit     string   `json:"unit,omitempty"`
+	Context  Context `json:"context"`
+	Concept  string  `json:"concept"`
+	Value    any     `json:"value"`
+	Decimals string  `json:"decimals,omitempty"`
+	Unit     string  `json:"unit,omitempty"`
 }
 
 // Context represents the context of a fact in the XBRL data.
 type Context struct {
 	Entity   string    `json:"entity"`
 	Segments []Segment `json:"segments"`
-	Period   *Period   `json:"period"`
+	Period   Period    `json:"period"`
 }
 
 // Segment represents a segment in the context of a fact in the XBRL data.
@@ -41,6 +41,71 @@ type Period struct {
 	Instant   string `json:"instant,omitempty"`
 	StartDate string `json:"startDate,omitempty"`
 	EndDate   string `json:"endDate,omitempty"`
+}
+
+// UnmarshalXML decodes the XML data into the XBRL struct.
+func (x *XBRL) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var raw rawXBRL
+	if err := d.DecodeElement(&raw, &start); err != nil {
+		return err
+	}
+
+	units := make(map[string]string)
+	for _, unit := range raw.Units {
+		if unit.Divide.Numerator != "" && unit.Divide.Denominator != "" {
+			units[unit.ID] = getLastPart(fmt.Sprintf("%s/%s", unit.Divide.Numerator, unit.Divide.Denominator), ':')
+		} else {
+			units[unit.ID] = getLastPart(unit.Measure, ':')
+		}
+	}
+
+	contexts := make(map[string]Context)
+	for _, ctx := range raw.Contexts {
+		segments := make([]Segment, 0)
+		for _, seg := range ctx.Segments {
+			for _, member := range seg.Members {
+				segments = append(segments, Segment{
+					Dimension: strings.TrimSuffix(getLastPart(member.Dimension, ':'), "Axis"),
+					Member:    strings.TrimSuffix(getLastPart(member.Value, ':'), "Member"),
+				})
+			}
+		}
+		contexts[ctx.ID] = Context{
+			Entity:   ctx.Entity,
+			Segments: segments,
+			Period: Period{
+				Instant:   ctx.Period.Instant,
+				StartDate: ctx.Period.StartDate,
+				EndDate:   ctx.Period.EndDate,
+			},
+		}
+	}
+
+	facts := make([]Fact, 0, len(raw.Facts))
+	for _, fact := range raw.Facts {
+		context, ok := contexts[fact.ContextRef]
+		if !ok {
+			continue
+		}
+		unit := units[fact.UnitRef]
+
+		var value any
+		if unit == "" {
+			value = extractText(fact.Value)
+		} else {
+			value = parseValue(fact.Value)
+		}
+
+		facts = append(facts, Fact{
+			Context:  context,
+			Concept:  fact.XMLName.Local,
+			Value:    value,
+			Decimals: fact.Decimals,
+			Unit:     unit,
+		})
+	}
+	x.Facts = facts
+	return nil
 }
 
 // rawXBRL represents the raw XML structure of the XBRL data.
@@ -80,67 +145,6 @@ type rawXBRL struct {
 	} `xml:",any"`
 }
 
-// UnmarshalXML decodes the XML data into the XBRL struct.
-func (x *XBRL) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
-	var raw rawXBRL
-	if err := d.DecodeElement(&raw, &start); err != nil {
-		return err
-	}
-
-	units := make(map[string]string)
-	for _, unit := range raw.Units {
-		if unit.Divide.Numerator != "" && unit.Divide.Denominator != "" {
-			units[unit.ID] = fmt.Sprintf("%s/%s", unit.Divide.Numerator, unit.Divide.Denominator)
-		} else {
-			units[unit.ID] = unit.Measure
-		}
-	}
-
-	contexts := make(map[string]*Context)
-	for _, ctx := range raw.Contexts {
-		segments := make([]Segment, 0)
-		for _, seg := range ctx.Segments {
-			for _, member := range seg.Members {
-				dimension := getLastPart(member.Dimension, ':')
-				memberValue := getLastPart(member.Value, ':')
-
-				segments = append(segments, Segment{
-					Dimension: dimension,
-					Member:    memberValue,
-				})
-			}
-		}
-
-		contexts[ctx.ID] = &Context{
-			Entity:   ctx.Entity,
-			Segments: segments,
-			Period: &Period{
-				Instant:   ctx.Period.Instant,
-				StartDate: ctx.Period.StartDate,
-				EndDate:   ctx.Period.EndDate,
-			},
-		}
-	}
-
-	facts := make([]Fact, 0, len(raw.Facts))
-	for _, fact := range raw.Facts {
-		context, ok := contexts[fact.ContextRef]
-		if !ok {
-			continue
-		}
-		unit := units[fact.UnitRef]
-		facts = append(facts, Fact{
-			Context:  context,
-			Concept:  fact.XMLName.Local,
-			Value:    parseValue(fact.Value),
-			Decimals: fact.Decimals,
-			Unit:     getLastPart(unit, ':'),
-		})
-	}
-	x.Facts = facts
-	return nil
-}
-
 func parseValue(value string) any {
 	if boolValue, err := strconv.ParseBool(value); err == nil {
 		return boolValue
@@ -151,10 +155,10 @@ func parseValue(value string) any {
 	if floatValue, err := strconv.ParseFloat(value, 64); err == nil {
 		return floatValue
 	}
-	return cleanTextValue(value)
+	return value
 }
 
-func cleanTextValue(value string) string {
+func extractText(value string) string {
 	stripHTML := strip.StripTags(strings.ReplaceAll(value, "\n", ""))
 	words := strings.Fields(stripHTML)
 	return strings.Join(words, " ")

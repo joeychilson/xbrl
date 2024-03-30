@@ -25,7 +25,9 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("Parsed XBRL in %s\n", time.Since(startTime))
+	fmt.Printf("Parsed in %s\n", time.Since(startTime))
+
+	fmt.Println("Facts:", len(xbrl.Facts))
 
 	bytes, err := json.Marshal(xbrl)
 	if err != nil {
@@ -39,4 +41,5 @@ func main() {
 	defer jsonFile.Close()
 
 	jsonFile.Write(bytes)
+
 }
