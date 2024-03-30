@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"log"
 	"os"
@@ -11,15 +12,16 @@ import (
 )
 
 func main() {
-	file, err := os.ReadFile("msft.xml")
+	file, err := os.Open("msft.xml")
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer file.Close()
 
 	startTime := time.Now()
 
-	xbrl, err := xbrl.Parse(string(file))
-	if err != nil {
+	var xbrl xbrl.XBRL
+	if err := xml.NewDecoder(file).Decode(&xbrl); err != nil {
 		log.Fatal(err)
 	}
 

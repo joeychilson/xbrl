@@ -43,51 +43,52 @@ type Period struct {
 	EndDate   string `json:"endDate,omitempty"`
 }
 
-// Parse takes a string of XBRL data and returns a XBRL struct with the parsed data.
-func Parse(xbrl string) (*XBRL, error) {
-	var doc struct {
-		XMLName xml.Name `xml:"xbrl"`
-		Units   []struct {
-			ID      string `xml:"id,attr"`
-			Measure string `xml:"measure"`
-			Divide  struct {
-				Numerator   string `xml:"unitNumerator>measure"`
-				Denominator string `xml:"unitDenominator>measure"`
-			} `xml:"divide"`
-		} `xml:"unit"`
-		Contexts []struct {
-			ID       string `xml:"id,attr"`
-			Entity   string `xml:"entity>identifier"`
-			Segments []struct {
-				XMLName xml.Name `xml:"segment"`
-				Members []struct {
-					XMLName   xml.Name `xml:"explicitMember"`
-					Dimension string   `xml:"dimension,attr"`
-					Value     string   `xml:",innerxml"`
-				} `xml:"explicitMember"`
-			} `xml:"entity>segment"`
-			Period struct {
-				Instant   string `xml:"instant"`
-				StartDate string `xml:"startDate"`
-				EndDate   string `xml:"endDate"`
-			} `xml:"period"`
-		} `xml:"context"`
-		Facts []struct {
-			XMLName    xml.Name `xml:""`
-			ContextRef string   `xml:"contextRef,attr"`
-			Value      string   `xml:",chardata"`
-			Decimals   string   `xml:"decimals,attr"`
-			UnitRef    string   `xml:"unitRef,attr"`
-		} `xml:",any"`
-	}
+// rawXBRL represents the raw XML structure of the XBRL data.
+type rawXBRL struct {
+	XMLName xml.Name `xml:"xbrl"`
+	Units   []struct {
+		ID      string `xml:"id,attr"`
+		Measure string `xml:"measure"`
+		Divide  struct {
+			Numerator   string `xml:"unitNumerator>measure"`
+			Denominator string `xml:"unitDenominator>measure"`
+		} `xml:"divide"`
+	} `xml:"unit"`
+	Contexts []struct {
+		ID       string `xml:"id,attr"`
+		Entity   string `xml:"entity>identifier"`
+		Segments []struct {
+			XMLName xml.Name `xml:"segment"`
+			Members []struct {
+				XMLName   xml.Name `xml:"explicitMember"`
+				Dimension string   `xml:"dimension,attr"`
+				Value     string   `xml:",innerxml"`
+			} `xml:"explicitMember"`
+		} `xml:"entity>segment"`
+		Period struct {
+			Instant   string `xml:"instant"`
+			StartDate string `xml:"startDate"`
+			EndDate   string `xml:"endDate"`
+		} `xml:"period"`
+	} `xml:"context"`
+	Facts []struct {
+		XMLName    xml.Name `xml:""`
+		ContextRef string   `xml:"contextRef,attr"`
+		Value      string   `xml:",chardata"`
+		Decimals   string   `xml:"decimals,attr"`
+		UnitRef    string   `xml:"unitRef,attr"`
+	} `xml:",any"`
+}
 
-	err := xml.Unmarshal([]byte(xbrl), &doc)
-	if err != nil {
-		return nil, err
+// UnmarshalXML decodes the XML data into the XBRL struct.
+func (x *XBRL) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
+	var raw rawXBRL
+	if err := d.DecodeElement(&raw, &start); err != nil {
+		return err
 	}
 
 	units := make(map[string]string)
-	for _, unit := range doc.Units {
+	for _, unit := range raw.Units {
 		if unit.Divide.Numerator != "" && unit.Divide.Denominator != "" {
 			units[unit.ID] = fmt.Sprintf("%s/%s", unit.Divide.Numerator, unit.Divide.Denominator)
 		} else {
@@ -96,7 +97,7 @@ func Parse(xbrl string) (*XBRL, error) {
 	}
 
 	contexts := make(map[string]*Context)
-	for _, ctx := range doc.Contexts {
+	for _, ctx := range raw.Contexts {
 		segments := make([]Segment, 0)
 		for _, seg := range ctx.Segments {
 			for _, member := range seg.Members {
@@ -121,8 +122,8 @@ func Parse(xbrl string) (*XBRL, error) {
 		}
 	}
 
-	facts := make([]Fact, 0)
-	for _, fact := range doc.Facts {
+	facts := make([]Fact, 0, len(raw.Facts))
+	for _, fact := range raw.Facts {
 		context, ok := contexts[fact.ContextRef]
 		if !ok {
 			continue
@@ -136,8 +137,8 @@ func Parse(xbrl string) (*XBRL, error) {
 			Unit:     getLastPart(unit, ':'),
 		})
 	}
-
-	return &XBRL{Facts: facts}, nil
+	x.Facts = facts
+	return nil
 }
 
 func parseValue(value string) any {
