@@ -14,6 +14,15 @@ type XBRL struct {
 	Facts []Fact `json:"facts"`
 }
 
+// String returns a string representation of the XBRL data.
+func (x *XBRL) String() string {
+	facts := make([]string, len(x.Facts))
+	for i, fact := range x.Facts {
+		facts[i] = fact.String()
+	}
+	return fmt.Sprintf("XBRL{Facts: [%s]}", strings.Join(facts, ", "))
+}
+
 // Fact represents a single fact in the XBRL data.
 type Fact struct {
 	Context  Context `json:"context"`
@@ -23,11 +32,36 @@ type Fact struct {
 	Unit     string  `json:"unit,omitempty"`
 }
 
+// String returns a string representation of the fact.
+func (f Fact) String() string {
+	valueStr := fmt.Sprintf("%v", f.Value) // Safely print any type of value
+	if f.Decimals != "" {
+		valueStr += ", Decimals: " + f.Decimals
+	}
+	if f.Unit != "" {
+		valueStr += ", Unit: " + f.Unit
+	}
+	return fmt.Sprintf("Fact{%s, Concept: %s, Value: %s}", f.Context.String(), f.Concept, valueStr)
+}
+
 // Context represents the context of a fact in the XBRL data.
 type Context struct {
 	Entity   string    `json:"entity"`
 	Segments []Segment `json:"segments"`
 	Period   Period    `json:"period"`
+}
+
+// String returns a string representation of the context.
+func (c Context) String() string {
+	segmentsStr := ""
+	if len(c.Segments) > 0 {
+		segments := make([]string, len(c.Segments))
+		for i, seg := range c.Segments {
+			segments[i] = seg.String()
+		}
+		segmentsStr = fmt.Sprintf(", Segments: [%s]", strings.Join(segments, ", "))
+	}
+	return fmt.Sprintf("Entity: %s, %s%s", c.Entity, c.Period.String(), segmentsStr)
 }
 
 // Segment represents a segment in the context of a fact in the XBRL data.
@@ -36,11 +70,24 @@ type Segment struct {
 	Member    string `json:"member"`
 }
 
+// String returns a string representation of the segment.
+func (s Segment) String() string {
+	return fmt.Sprintf("%s: %s", s.Dimension, s.Member)
+}
+
 // Period represents the period of a fact in the XBRL data.
 type Period struct {
 	Instant   string `json:"instant,omitempty"`
 	StartDate string `json:"startDate,omitempty"`
 	EndDate   string `json:"endDate,omitempty"`
+}
+
+// String returns a string representation of the period.
+func (p Period) String() string {
+	if p.Instant != "" {
+		return fmt.Sprintf("on %s", p.Instant)
+	}
+	return fmt.Sprintf("from %s to %s", p.StartDate, p.EndDate)
 }
 
 // UnmarshalXML decodes the XML data into the XBRL struct.
