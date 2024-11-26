@@ -9,20 +9,6 @@ import (
 	strip "github.com/grokify/html-strip-tags-go"
 )
 
-// XBRL represents the parsed XBRL data.
-type XBRL struct {
-	Facts []Fact `json:"facts"`
-}
-
-// String returns a string representation of the XBRL data.
-func (x *XBRL) String() string {
-	facts := make([]string, len(x.Facts))
-	for i, fact := range x.Facts {
-		facts[i] = fact.String()
-	}
-	return fmt.Sprintf("XBRL{Facts: [%s]}", strings.Join(facts, ", "))
-}
-
 // Fact represents a single fact in the XBRL data.
 type Fact struct {
 	Context  Context `json:"context"`
@@ -90,6 +76,11 @@ func (p Period) String() string {
 	return fmt.Sprintf("from %s to %s", p.StartDate, p.EndDate)
 }
 
+// XBRL represents the parsed XBRL data.
+type XBRL struct {
+	Facts []Fact `json:"facts"`
+}
+
 // UnmarshalXML decodes the XML data into the XBRL struct.
 func (x *XBRL) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	var raw rawXBRL
@@ -154,6 +145,29 @@ func (x *XBRL) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 	}
 	x.Facts = facts
 	return nil
+}
+
+// NumericFacts returns only the facts that have numeric values (integers or floats).
+func (x *XBRL) NumericFacts() []Fact {
+	numericFacts := make([]Fact, 0)
+
+	for _, fact := range x.Facts {
+		switch fact.Value.(type) {
+		case int64, float64:
+			numericFacts = append(numericFacts, fact)
+		}
+	}
+
+	return numericFacts
+}
+
+// String returns a string representation of the XBRL data.
+func (x *XBRL) String() string {
+	facts := make([]string, len(x.Facts))
+	for i, fact := range x.Facts {
+		facts[i] = fact.String()
+	}
+	return fmt.Sprintf("XBRL{Facts: [%s]}", strings.Join(facts, ", "))
 }
 
 // rawXBRL represents the raw XML structure of the XBRL data.
